@@ -101,3 +101,12 @@ client.on('messageCreate', async (message) => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+const http = require('http');
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot is running online!\n');
+});
+server.listen(process.env.PORT || 3000, () => {
+    console.log('HTTP Web Server Listening');
+});
