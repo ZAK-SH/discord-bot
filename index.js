@@ -1,24 +1,46 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildMembers
     ]
 });
 
 const BANNED_WORDS = ['spamm', 'hack', 'رابط_مشبوه']; 
 const LINK_REGEX = /(https?:\/\/[^\s]+)/g;
-
 const ALLOWED_CHANNEL_ID = '1561128140674175007';
 
-client.on('ready', () => {
+const commands = [
+    new SlashCommandBuilder().setName('help').setDescription('عرض قائمة الأوامر الشاملة'),
+    new SlashCommandBuilder().setName('لو_خيروك').setDescription('لعبة الاختيارات العشوائية'),
+    new SlashCommandBuilder().setName('قرعة').setDescription('اختيار عضو عشوائي من السيرفر'),
+    new SlashCommandBuilder().setName('نصيحة').setDescription('الحصول على نصيحة برمجية أو عامة'),
+    new SlashCommandBuilder()
+        .setName('clear')
+        .setDescription('مسح الرسائل')
+        .addIntegerOption(option => 
+            option.setName('count').setDescription('عدد الرسائل المراد مسحها').setRequired(false)
+        )
+].map(command => command.toJSON());
+
+client.once('ready', async () => {
     console.log(`✅ Bot is online ${client.user.tag}`);
     client.user.setActivity('حماية السيرفر والفعاليات | /help');
+
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    try {
+        await rest.put(
+            Routes.applicationCommands(client.user.id),
+            { body: commands },
+        );
+        console.log('Successfully registered application commands.');
+    } catch (error) {
+        console.error(error);
+    }
 });
 
 client.on('guildMemberAdd', (member) => {
@@ -60,24 +82,32 @@ client.on('messageCreate', async (message) => {
     if (content === 'هلا' || content === 'هلا والله') {
         return message.reply('يا هلا وغلا! منور السيرفر 🥳');
     }
+});
 
-    if (content === '/help' || content === '/') {
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
+        return interaction.reply({ content: '❌ لا يمكنك استخدام الأوامر إلا في القناة المخصصة!', ephemeral: true });
+    }
+
+    const { commandName } = interaction;
+
+    if (commandName === 'help') {
         const helpEmbed = new EmbedBuilder()
             .setTitle('🌟 قائمة الأوامر الشاملة للبوت الخارق')
             .setColor('#26658C')
             .setDescription('إليك جميع الخدمات والألعاب والأوامر المتاحة حالياً في السيرفر:')
             .addFields(
-                { name: '🎮 ألعاب وفعاليات', value: '`!لو_خيروك` - لعبة الاختيارات الممتعة\n`!قرعة` - اختيار عضو عشوائي من السيرفر\n`!نصيحة` - الحصول على نصيحة برمجية أو عامة' },
+                { name: '🎮 ألعاب وفعاليات', value: '`/لو_خيروك` - لعبة الاختيارات الممتعة\n`/قرعة` - اختيار عضو عشوائي من السيرفر\n`/نصيحة` - الحصول على نصيحة برمجية أو عامة' },
                 { name: '🛡️ الحماية والأمان', value: 'البوت يحذف الروابط والكلمات السيئة تلقائياً.' },
-                { name: '⚙️ الأوامر الإدارية', value: '`!clear [العدد]` - مسح الرسائل\n`!ban [العضو]` - حظر عضو\n`!kick [العضو]` - طرد عضو' },
-                { name: '👋 الترحيب والأنشطة', value: 'ترحيب تلقائي بالأعضاء الجدد وتعديل حالة البوت.' }
+                { name: '⚙️ الأوامر الإدارية', value: '`/clear` - مسح الرسائل' }
             )
             .setFooter({ text: 'صُنع بواسطة زكريا لتطوير السيرفرات!' });
 
-        return message.channel.send({ embeds: [helpEmbed] });
+        return interaction.reply({ embeds: [helpEmbed] });
     }
 
-    if (content === '/لو_خيروك') {
+    if (commandName === 'لو_خيروك') {
         const options = [
             'تأكل بصلة نيئة 🧅 أم تشرب كاس ماء وملح 🧂؟',
             'تسافر للماضي 🕰️ أم تسافر للمستقبل 🚀؟',
@@ -85,54 +115,33 @@ client.on('messageCreate', async (message) => {
             'تكون قادراً على الطيران 🦅 أم الاختفاء 👻؟'
         ];
         const randomOption = options[Math.floor(Math.random() * options.length)];
-        return message.reply(`🤔 **لو خيروك:**\n${randomOption}`);
+        return interaction.reply(`🤔 **لو خيروك:**\n${randomOption}`);
     }
 
-    if (content === '/قرعة') {
-        const members = await message.guild.members.fetch();
+    if (commandName === 'قرعة') {
+        await interaction.deferReply();
+        const members = await interaction.guild.members.fetch();
         const randomMember = members.filter(m => !m.user.bot).random();
-        return message.channel.send(`🎉 الفائز في القرعة هو: ${randomMember}! مبروك الفوز 🥳`);
+        return interaction.editReply(`🎉 الفائز في القرعة هو: ${randomMember}! مبروك الفوز 🥳`);
     }
 
-    if (content === '/نصيحة') {
+    if (commandName === 'نصيحة') {
         const tips = [
             '💡 اكتب كودك بتركيز واجعل دائماً أسماء المتغيرات واضحة ومعبرة!',
             '💡 لا تشارك توكن بوتك البرمجي مع أي شخص أبداً لتحافظ على أمان سيرفرك.',
             '💡 خذ استراحة قصيرة كل ساعة عمل لتجديد نشاطك التركيزي في البرمجة!'
         ];
         const randomTip = tips[Math.floor(Math.random() * tips.length)];
-        return message.reply(randomTip);
+        return interaction.reply(randomTip);
     }
 
-    if (content.startsWith('/clear')) {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-            return message.reply('❌ ليس لديك صلاحية مسح الرسائل!');
+    if (commandName === 'clear') {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+            return interaction.reply({ content: '❌ ليس لديك صلاحية مسح الرسائل!', ephemeral: true });
         }
-        const args = content.split(' ');
-        const amount = parseInt(args[1]) || 10;
-        await message.channel.bulkDelete(amount, true);
-        const msg = await message.channel.send(`🧹 تم مسح ${amount} رسالة بنجاح.`);
-        setTimeout(() => msg.delete(), 3000);
-    }
-
-    if (content.startsWith('/kick')) {
-        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
-            return message.reply('❌ ليس لديك صلاحية طرد الأعضاء!');
-        }
-        const memberToKick = message.mentions.members.first();
-        if (!memberToKick) return message.reply('❌ يرجى منشن العضو المراد طرده!');
-        await memberToKick.kick();
-        return message.channel.send(`👢 تم طرد العضو ${memberToKick.user.tag} بنجاح.`);
-    }
-
-    if (content.startsWith('/ban')) {
-        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-            return message.reply('❌ ليس لديك صلاحية حظر الأعضاء!');
-        }
-        const memberToBan = message.mentions.members.first();
-        if (!memberToBan) return message.reply('❌ يرجى منشن العضو المراد حظره!');
-        await memberToBan.ban();
-        return message.channel.send(`🔨 تم حظر العضو ${memberToBan.user.tag} نهائياً.`);
+        const amount = interaction.options.getInteger('count') || 10;
+        await interaction.channel.bulkDelete(amount, true);
+        await interaction.reply({ content: `🧹 تم مسح ${amount} رسالة بنجاح.`, ephemeral: true });
     }
 });
 
@@ -143,6 +152,4 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is running online 24/7!\n');
 });
-server.listen(process.env.PORT || 3000, () => {
-    console.log('HTTP Web Server Listening');
-});
+server.listen(process.env.PORT || 3000, () => {});
